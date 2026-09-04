@@ -1,0 +1,40 @@
+
+
+# Local development infrastructure only. Passwords here are intentionally
+# simple defaults — never use this file's credentials outside your own machine.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: food_delivery_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fooduser
+      POSTGRES_PASSWORD: foodpass
+      POSTGRES_DB: food_delivery_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fooduser -d food_delivery_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: food_delivery_redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:

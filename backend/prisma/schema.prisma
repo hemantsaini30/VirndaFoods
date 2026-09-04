@@ -1,0 +1,464 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────
+
+enum UserRole {
+  CUSTOMER
+  RESTAURANT_OWNER
+  DELIVERY_PARTNER
+  ADMIN
+}
+
+enum RestaurantApplicationStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum RestaurantStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum DeliveryPartnerApplicationStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum OrderStatus {
+  CREATED
+  PAYMENT_PENDING
+  PAYMENT_FAILED
+  CONFIRMED
+  PREPARING
+  READY_FOR_PICKUP
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  INITIATED
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUND_INITIATED
+  REFUNDED
+}
+
+enum DeliveryAssignmentStatus {
+  PENDING_ASSIGNMENT
+  OFFERED
+  ACCEPTED
+  REJECTED
+  PICKED_UP
+  DELIVERED
+  CANCELLED
+}
+
+// Who/what triggered a ledger event row
+enum TriggeredBy {
+  WEBHOOK
+  ADMIN
+  SYSTEM_JOB
+  USER
+}
+
+enum NotificationType {
+  ORDER_UPDATE
+  PAYMENT_UPDATE
+  APPLICATION_UPDATE
+  ASSIGNMENT_UPDATE
+  GENERIC
+}
+
+// ─────────────────────────────────────────────────────────
+// USERS
+// ─────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  phone        String?
+  role         UserRole
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations (back-references only; ownership enforced in service layer, not by relation existence)
+  restaurantApplications      RestaurantApplication[]
+  ownedRestaurants            Restaurant[]
+  deliveryPartnerApplications DeliveryPartnerApplication[]
+  cart                        Cart?
+  ordersAsCustomer            Order[]                       @relation("CustomerOrders")
+  deliveryAssignments         DeliveryAssignment[]          @relation("DriverAssignments")
+  driverLocations             DriverLocation[]
+  reviews                     Review[]
+  notifications               Notification[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────
+// RESTAURANT ONBOARDING
+// ─────────────────────────────────────────────────────────
+
+// A prospective restaurant owner applies; admin approves/rejects.
+// Kept separate from Restaurant so a rejected/pending application
+// never has a live, orderable restaurant record.
+model RestaurantApplication {
+  id          String                      @id @default(uuid())
+  applicantId String
+  applicant   User                        @relation(fields: [applicantId], references: [id])
+  name        String
+  address     String
+  city        String
+  documentsUrl String? // Cloudinary URL(s) for FSSAI license etc.
+  status      RestaurantApplicationStatus @default(PENDING)
+  reviewedBy  String? // admin userId, nullable until reviewed
+  reviewNote  String?
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+
+  restaurant Restaurant? // set once approved & the live Restaurant row is created
+
+  @@index([applicantId])
+  @@index([status])
+  @@map("restaurant_applications")
+}
+
+model Restaurant {
+  id            String            @id @default(uuid())
+  applicationId String            @unique
+  application   RestaurantApplication @relation(fields: [applicationId], references: [id])
+  ownerId       String
+  owner         User              @relation(fields: [ownerId], references: [id])
+  name          String
+  address       String
+  city          String
+  imageUrl      String?
+  status        RestaurantStatus  @default(ACTIVE)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  menuCategories MenuCategory[]
+  foodItems      FoodItem[]
+  orders         Order[]
+
+  @@index([ownerId])
+  @@index([status])
+  @@map("restaurants")
+}
+
+model MenuCategory {
+  id           String     @id @default(uuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  name         String
+  displayOrder Int        @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  foodItems FoodItem[]
+
+  @@index([restaurantId])
+  @@map("menu_categories")
+}
+
+model FoodItem {
+  id           String       @id @default(uuid())
+  restaurantId String
+  restaurant   Restaurant   @relation(fields: [restaurantId], references: [id])
+  categoryId   String
+  category     MenuCategory @relation(fields: [categoryId], references: [id])
+  name         String
+  description  String?
+  imageUrl     String?
+  priceInPaise Int // current menu price; NOT what's charged historically (see OrderItem.priceAtPurchase)
+  isAvailable  Boolean      @default(true)
+  // optimistic locking for concurrent availability/stock updates
+  version      Int          @default(0)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@index([restaurantId])
+  @@index([categoryId])
+  @@map("food_items")
+}
+
+// ─────────────────────────────────────────────────────────
+// CART (pre-order, mutable, single active cart per customer)
+// ─────────────────────────────────────────────────────────
+
+model Cart {
+  id         String   @id @default(uuid())
+  customerId String   @unique // one active cart per customer
+  customer   User     @relation(fields: [customerId], references: [id])
+  // restaurantId is denormalized here deliberately: a cart can only contain
+  // items from one restaurant at a time (Swiggy/Zomato-style single-restaurant cart).
+  restaurantId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  items CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id         String   @id @default(uuid())
+  cartId     String
+  cart       Cart     @relation(fields: [cartId], references: [id])
+  foodItemId String
+  foodItem   FoodItem @relation(fields: [foodItemId], references: [id])
+  quantity   Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([cartId])
+  @@map("cart_items")
+}
+
+// ─────────────────────────────────────────────────────────
+// ORDERS
+// ─────────────────────────────────────────────────────────
+
+model Order {
+  id               String      @id @default(uuid())
+  customerId       String
+  customer         User        @relation("CustomerOrders", fields: [customerId], references: [id])
+  restaurantId     String
+  restaurant       Restaurant  @relation(fields: [restaurantId], references: [id])
+  deliveryPartnerId String?    // nullable until an assignment is accepted
+  status           OrderStatus @default(CREATED)
+  // Server-computed totals only — never trust client-sent values (Master Prompt rule #2)
+  subtotalInPaise    Int
+  deliveryFeeInPaise Int
+  discountInPaise    Int         @default(0)
+  totalInPaise       Int
+  deliveryAddress    String
+  // optimistic locking: every state transition must check+increment this
+  version            Int         @default(0)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  items              OrderItem[]
+  payment            Payment?
+  deliveryAssignment DeliveryAssignment?
+  events             OrderEvent[]
+  review             Review?
+
+  @@index([customerId])
+  @@index([restaurantId])
+  @@index([deliveryPartnerId])
+  @@index([status])
+  @@index([createdAt])
+  // compound index for restaurant dashboard queries: "this restaurant's orders by status, newest first"
+  @@index([restaurantId, status, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String   @id @default(uuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id])
+  foodItemId String
+  foodItem   FoodItem @relation(fields: [foodItemId], references: [id])
+  quantity   Int
+  // Snapshot of price at the moment of purchase — independent of FoodItem.priceInPaise changing later
+  // (Master Prompt rule #3).
+  priceAtPurchaseInPaise Int
+  createdAt  DateTime @default(now())
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+// Append-only audit ledger for Order state changes. Never updated/deleted.
+model OrderEvent {
+  id           String      @id @default(uuid())
+  orderId      String
+  order        Order       @relation(fields: [orderId], references: [id])
+  fromStatus   OrderStatus?
+  toStatus     OrderStatus
+  triggeredBy  TriggeredBy
+  triggeredById String?    // userId / job name / webhook source identifier, if applicable
+  reason       String?
+  rawPayload   Json?       // e.g. raw webhook body for forensic replay
+  createdAt    DateTime    @default(now())
+
+  @@index([orderId])
+  @@map("order_events")
+}
+
+// ─────────────────────────────────────────────────────────
+// PAYMENTS
+// ─────────────────────────────────────────────────────────
+
+model Payment {
+  id                String        @id @default(uuid())
+  orderId           String        @unique
+  order             Order         @relation(fields: [orderId], references: [id])
+  provider          String        @default("razorpay")
+  providerOrderId   String? // Razorpay order_id, created at payment initiation
+  providerPaymentId String?       @unique // Razorpay payment_id, set once payment captured/failed
+  status            PaymentStatus @default(INITIATED)
+  amountInPaise     Int
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  events PaymentEvent[]
+
+  @@index([orderId])
+  @@index([providerPaymentId])
+  @@map("payments")
+}
+
+// Append-only audit ledger for Payment state changes. Never updated/deleted.
+model PaymentEvent {
+  id            String        @id @default(uuid())
+  paymentId     String
+  payment       Payment       @relation(fields: [paymentId], references: [id])
+  fromStatus    PaymentStatus?
+  toStatus      PaymentStatus
+  triggeredBy   TriggeredBy
+  triggeredById String?
+  reason        String?
+  rawPayload    Json? // raw Razorpay webhook payload for forensic replay
+  createdAt     DateTime      @default(now())
+
+  @@index([paymentId])
+  @@map("payment_events")
+}
+
+// ─────────────────────────────────────────────────────────
+// DELIVERY PARTNER ONBOARDING & ASSIGNMENT
+// ─────────────────────────────────────────────────────────
+
+model DeliveryPartnerApplication {
+  id           String                            @id @default(uuid())
+  applicantId  String
+  applicant    User                              @relation(fields: [applicantId], references: [id])
+  vehicleType  String
+  licenseUrl   String? // Cloudinary URL
+  status       DeliveryPartnerApplicationStatus  @default(PENDING)
+  reviewedBy   String?
+  reviewNote   String?
+  createdAt    DateTime                          @default(now())
+  updatedAt    DateTime                          @updatedAt
+
+  @@index([applicantId])
+  @@index([status])
+  @@map("delivery_partner_applications")
+}
+
+model DeliveryAssignment {
+  id        String                   @id @default(uuid())
+  orderId   String                   @unique // one active assignment per order
+  order     Order                    @relation(fields: [orderId], references: [id])
+  driverId  String
+  driver    User                     @relation("DriverAssignments", fields: [driverId], references: [id])
+  status    DeliveryAssignmentStatus @default(PENDING_ASSIGNMENT)
+  offeredAt DateTime?
+  acceptedAt DateTime?
+  pickedUpAt DateTime?
+  deliveredAt DateTime?
+  createdAt DateTime                 @default(now())
+  updatedAt DateTime                 @updatedAt
+
+  @@index([driverId])
+  @@index([orderId])
+  @@index([status])
+  @@map("delivery_assignments")
+}
+
+// High-write, low-retention table: latest + recent driver GPS pings.
+// Pruned by a BullMQ job (Master Prompt rule #9) — not kept forever.
+model DriverLocation {
+  id        String   @id @default(uuid())
+  driverId  String
+  driver    User     @relation(fields: [driverId], references: [id])
+  latitude  Float
+  longitude Float
+  recordedAt DateTime @default(now())
+
+  @@index([driverId])
+  @@index([recordedAt])
+  @@map("driver_locations")
+}
+
+// ─────────────────────────────────────────────────────────
+// REVIEWS & NOTIFICATIONS
+// ─────────────────────────────────────────────────────────
+
+model Review {
+  id        String   @id @default(uuid())
+  orderId   String   @unique // one review per order
+  order     Order    @relation(fields: [orderId], references: [id])
+  customerId String
+  customer  User     @relation(fields: [customerId], references: [id])
+  rating    Int // 1-5, validated at the Zod layer, not DB-enforced here
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@index([customerId])
+  @@map("reviews")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id])
+  type      NotificationType
+  title     String
+  body      String
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId])
+  @@map("notifications")
+}
+
+// ─────────────────────────────────────────────────────────
+// IDEMPOTENCY
+// ─────────────────────────────────────────────────────────
+
+// Generic idempotency store used by order creation and payment initiation.
+// requestFingerprint = hash of (route + userId + request body) so a key reused
+// with a DIFFERENT payload is detected and rejected, not silently served.
+model IdempotencyKey {
+  id                  String   @id @default(uuid())
+  key                 String   @unique
+  userId              String
+  route               String
+  requestFingerprint  String
+  responseStatusCode  Int?
+  responseBody        Json?
+  createdAt           DateTime @default(now())
+  expiresAt           DateTime // used by a pruning job; also checked at lookup time
+
+  @@index([key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
