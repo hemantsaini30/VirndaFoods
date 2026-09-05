@@ -1,15 +1,17 @@
 // src/App.jsx
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
-import ProtectedRoute from './components/ProtectedRoute';
+import ProtectedRoute from './components/layout/ProtectedRoute';
 
 import Home from './pages/Home';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import CustomerHome from './pages/CustomerHome';
-import RestaurantDashboard from './pages/RestaurantDashboard';
-import DriverDashboard from './pages/DriverDashboard';
-import AdminDashboard from './pages/AdminDashboard';
+import Login from './pages/auth/Login';
+import Register from './pages/auth/Register';
+import CustomerHome from './pages/customer/CustomerHome';
+import RestaurantApplicationPage from './pages/customer/RestaurantApplicationPage';
+import DeliveryPartnerApplicationPage from './pages/customer/DeliveryPartnerApplicationPage';
+import RestaurantDashboard from './pages/restaurant/RestaurantDashboard';
+import DriverDashboard from './pages/driver/DriverDashboard';
+import AdminDashboard from './pages/admin/AdminDashboard';
 
 export default function App() {
   return (
@@ -28,6 +30,28 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+
+          {/* Application forms — accessible to the roles the backend
+              actually allows to submit each application type. No nav
+              link exists for these yet (no navbar has been built); reach
+              them by URL until a later phase adds navigation. */}
+          <Route
+            path="/apply/restaurant"
+            element={
+              <ProtectedRoute allowedRoles={['CUSTOMER', 'DELIVERY_PARTNER']}>
+                <RestaurantApplicationPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/apply/driver"
+            element={
+              <ProtectedRoute allowedRoles={['CUSTOMER', 'RESTAURANT_OWNER']}>
+                <DeliveryPartnerApplicationPage />
+              </ProtectedRoute>
+            }
+          />
+
           <Route
             path="/restaurant"
             element={

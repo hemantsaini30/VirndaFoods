@@ -1,4 +1,4 @@
-// src/pages/CustomerHome.jsx
+// src/pages/customer/CustomerHome.jsx
 // Placeholder route for the customer experience. Real UI (browsing
 // restaurants, cart, order tracking) is built starting in later phases.
 

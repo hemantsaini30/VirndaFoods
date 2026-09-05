@@ -1,13 +1,13 @@
-// src/pages/Login.test.jsx
+// src/pages/auth/Login.test.jsx
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import Login from './Login';
-import { AuthProvider } from '../context/AuthContext';
-import axiosClient from '../api/axiosClient';
+import { AuthProvider } from '../../context/AuthContext';
+import axiosClient from '../../api/axiosClient';
 
-vi.mock('../api/axiosClient', () => ({
+vi.mock('../../api/axiosClient', () => ({
   default: {
     post: vi.fn(),
   },

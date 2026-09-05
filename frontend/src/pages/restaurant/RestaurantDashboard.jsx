@@ -1,4 +1,4 @@
-// src/pages/RestaurantDashboard.jsx
+// src/pages/restaurant/RestaurantDashboard.jsx
 // Placeholder route for the restaurant-owner experience (menu management,
 // incoming orders dashboard). Real UI arrives in a later phase.
 

@@ -1,4 +1,4 @@
-// src/pages/DriverDashboard.jsx
+// src/pages/driver/DriverDashboard.jsx
 // Placeholder route for the delivery-partner experience (assignment offers,
 // live location sharing). Real UI arrives in a later phase.
 

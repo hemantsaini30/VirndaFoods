@@ -1,7 +1,7 @@
-// src/pages/Register.jsx
+// src/pages/auth/Register.jsx
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 
 const ROLE_OPTIONS = [
   { value: 'CUSTOMER', label: 'Customer' },
