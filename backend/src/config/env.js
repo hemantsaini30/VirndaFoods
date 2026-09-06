@@ -1,4 +1,3 @@
-// src/config/env.js
 require('dotenv').config();
 
 const { z } = require('zod');
@@ -18,6 +17,14 @@ const envSchema = z.object({
     .default('false')
     .transform((val) => val === 'true'),
   CORS_ORIGIN: z.string().min(1, 'CORS_ORIGIN is required'),
+
+  // Cloudinary — required starting Phase 4. If these are missing, the server
+  // fails fast at boot rather than crashing later the first time someone
+  // tries to upload an image.
+  CLOUDINARY_CLOUD_NAME: z.string().min(1, 'CLOUDINARY_CLOUD_NAME is required'),
+  CLOUDINARY_API_KEY: z.string().min(1, 'CLOUDINARY_API_KEY is required'),
+  CLOUDINARY_API_SECRET: z.string().min(1, 'CLOUDINARY_API_SECRET is required'),
+  CLOUDINARY_UPLOAD_FOLDER: z.string().default('food-delivery-dev'),
 });
 
 const parsed = envSchema.safeParse(process.env);

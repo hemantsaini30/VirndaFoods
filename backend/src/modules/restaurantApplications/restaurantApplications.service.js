@@ -53,9 +53,30 @@ async function reviewApplication({ applicationId, adminId, toStatus, reviewNote 
     );
   }
 
-  // Status update + (on approval) the new Restaurant row happen in one
-  // transaction — an application can never end up APPROVED without a
-  // matching live Restaurant, or vice versa.
+  // Status update + (on approval) the new Restaurant row + (on approval)
+  // the applicant's role flip all happen in ONE transaction — an
+  // application can never end up APPROVED without both a matching live
+  // Restaurant AND the applicant actually holding RESTAURANT_OWNER, or
+  // else none of the three changes take effect at all.
+  //
+  // BUGFIX (found during Phase 4 manual testing, not part of Phase 4's
+  // original scope): this role flip was previously missing entirely. An
+  // approved applicant kept their original role (CUSTOMER or
+  // DELIVERY_PARTNER per the Phase 3 role restriction on who may even
+  // apply) and could never pass authorize('RESTAURANT_OWNER') on any of
+  // the restaurant/menu-management endpoints Phase 4 introduced — meaning
+  // an approved owner could never actually manage the restaurant they'd
+  // just been approved for. Fixed here rather than worked around
+  // elsewhere, since the real defect lives in this transaction.
+  //
+  // The update goes directly through `tx.user.update(...)` rather than a
+  // `users` module export, because `users/index.js` currently exposes no
+  // "update role" function, and adding one solely for this one internal
+  // transactional write seemed like more new surface area than the fix
+  // warranted. This is a judgment call, not a silent one — worth
+  // revisiting if a second module ever needs to update User.role for a
+  // similar reason, at which point a shared `users` export would be the
+  // better home for it.
   const updatedApplication = await prisma.$transaction(async (tx) => {
     const updated = await repository.updateStatus(tx, applicationId, {
       status: toStatus,
@@ -70,6 +91,11 @@ async function reviewApplication({ applicationId, adminId, toStatus, reviewNote 
         name: application.name,
         address: application.address,
         city: application.city,
+      });
+
+      await tx.user.update({
+        where: { id: application.applicantId },
+        data: { role: 'RESTAURANT_OWNER' },
       });
     }
 

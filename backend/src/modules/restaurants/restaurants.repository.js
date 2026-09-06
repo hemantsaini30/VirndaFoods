@@ -1,8 +1,16 @@
-// src/modules/restaurants/restaurants.repository.js
 const prisma = require('../../config/prisma');
 
 function findById(id) {
   return prisma.restaurant.findUnique({ where: { id } });
+}
+
+// Backs GET /restaurants/mine. A RESTAURANT_OWNER currently owns at most
+// one Restaurant (the schema doesn't prevent multiple, but nothing in the
+// product flow creates more than one per owner today), so findFirst is
+// sufficient — if that assumption ever changes, this is the function to
+// revisit.
+function findByOwnerId(ownerId) {
+  return prisma.restaurant.findFirst({ where: { ownerId } });
 }
 
 function updateStatus(id, status) {
@@ -21,4 +29,28 @@ function createFromApplication(tx, { applicationId, ownerId, name, address, city
   });
 }
 
-module.exports = { findById, updateStatus, createFromApplication };
+async function findMany({ where, skip, take }) {
+  const [restaurants, total] = await Promise.all([
+    prisma.restaurant.findMany({
+      where,
+      skip,
+      take,
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.restaurant.count({ where }),
+  ]);
+  return { restaurants, total };
+}
+
+function updateProfile(id, data) {
+  return prisma.restaurant.update({ where: { id }, data });
+}
+
+module.exports = {
+  findById,
+  findByOwnerId,
+  updateStatus,
+  createFromApplication,
+  findMany,
+  updateProfile,
+};

@@ -15,6 +15,12 @@ const usersRoutes = require('./modules/users/users.routes');
 const restaurantApplicationsRoutes = require('./modules/restaurantApplications/restaurantApplications.routes');
 const deliveryPartnerApplicationsRoutes = require('./modules/deliveryPartnerApplications/deliveryPartnerApplications.routes');
 const restaurantsRoutes = require('./modules/restaurants/restaurants.routes');
+const {
+  restaurantScopedRouter: menuRestaurantScopedRoutes,
+  categoryRouter: menuCategoryRoutes,
+  itemRouter: menuItemRoutes,
+} = require('./modules/menu/menu.routes');
+const uploadsRoutes = require('./modules/uploads/uploads.routes');
 
 const { registerListeners: registerNotificationListeners } = require('./modules/notifications');
 
@@ -53,7 +59,25 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/users', usersRoutes);
 app.use('/api/v1/restaurant-applications', restaurantApplicationsRoutes);
 app.use('/api/v1/delivery-partner-applications', deliveryPartnerApplicationsRoutes);
+
+// restaurantsRoutes handles GET /, GET /admin, GET /:id, PATCH /:id,
+// PATCH /:id/status. menuRestaurantScopedRoutes ADDS GET /:id/menu,
+// POST /:id/categories, POST /:id/items onto the SAME /restaurants prefix
+// — both routers are mounted here, in this order. Express tries routers
+// in mount order and each router internally tries its own routes in
+// registration order, so this is safe: restaurantsRoutes' GET /:id won't
+// intercept menuRestaurantScopedRoutes' GET /:id/menu, since Express only
+// matches a route if the full path matches (":id" alone doesn't match
+// ":id/menu").
 app.use('/api/v1/restaurants', restaurantsRoutes);
+app.use('/api/v1/restaurants', menuRestaurantScopedRoutes);
+
+// Flat category/item routes, per the phase spec (PATCH /categories/:id,
+// PATCH /items/:id, etc. — not nested under /restaurants/:id/...).
+app.use('/api/v1/categories', menuCategoryRoutes);
+app.use('/api/v1/items', menuItemRoutes);
+
+app.use('/api/v1/uploads', uploadsRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

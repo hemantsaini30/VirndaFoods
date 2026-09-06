@@ -1,6 +1,7 @@
 // src/context/AuthContext.jsx
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import axiosClient, { setAccessToken } from '../api/axiosClient';
+import { setAccessToken } from '../api/axiosClient';
+import authApi from '../api/endpoints/authApi';
 
 const AuthContext = createContext(null);
 
@@ -27,8 +28,8 @@ export function AuthProvider({ children }) {
   // user is treated as logged out.
   useEffect(() => {
     let cancelled = false;
-    axiosClient
-      .post('/auth/refresh')
+    authApi
+      .refresh()
       .then((res) => {
         if (!cancelled) applyAuth(res.data.user, res.data.accessToken);
       })
@@ -44,19 +45,19 @@ export function AuthProvider({ children }) {
   }, [applyAuth, clearAuth]);
 
   async function login(email, password) {
-    const res = await axiosClient.post('/auth/login', { email, password });
+    const res = await authApi.login(email, password);
     applyAuth(res.data.user, res.data.accessToken);
     return res.data.user;
   }
 
   async function register(payload) {
-    const res = await axiosClient.post('/auth/register', payload);
+    const res = await authApi.register(payload);
     return res.data.user;
   }
 
   async function logout() {
     try {
-      await axiosClient.post('/auth/logout');
+      await authApi.logout();
     } finally {
       clearAuth();
     }
