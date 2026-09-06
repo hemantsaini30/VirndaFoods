@@ -51,18 +51,40 @@ async function reviewApplication({ applicationId, adminId, toStatus, reviewNote 
     );
   }
 
-  // No linked "live" record to create on approval (there's no
-  // DeliveryPartner-specific table yet) — just the status flip. A future
-  // phase's driver-assignment logic checks eligibility by querying for an
-  // APPROVED application directly, per the Phase 3 prompt's intended
-  // future lookup pattern. Still wrapped in $transaction for consistency
-  // and to make adding an audit write here later a non-breaking change.
+  // Status update + (on approval) the applicant's role flip happen in ONE
+  // transaction — an application can never end up APPROVED without the
+  // applicant actually holding DELIVERY_PARTNER, or else neither change
+  // takes effect at all.
+  //
+  // BUGFIX (mirrors the restaurantApplications fix applied during Phase
+  // 4): this role flip was previously missing entirely, exactly like the
+  // restaurant-side defect. An approved applicant kept their original
+  // role (CUSTOMER or RESTAURANT_OWNER, per the Phase 3 role restriction
+  // on who may apply) and could never pass authorize('DELIVERY_PARTNER')
+  // on any delivery-partner-authenticated endpoint — meaning an approved
+  // driver could never actually act as one. There is no linked "live"
+  // record to create here (unlike Restaurant on the other side), so the
+  // fix is just the role update alongside the existing status write.
+  //
+  // Same judgment call as the restaurant side: this goes directly through
+  // `tx.user.update(...)` rather than a `users` module export, since
+  // `users/index.js` exposes no "update role" function yet. Revisit if a
+  // third module ever needs to touch User.role.
   const updatedApplication = await prisma.$transaction(async (tx) => {
-    return repository.updateStatus(tx, applicationId, {
+    const updated = await repository.updateStatus(tx, applicationId, {
       status: toStatus,
       reviewedBy: adminId,
       reviewNote: reviewNote ?? null,
     });
+
+    if (toStatus === 'APPROVED') {
+      await tx.user.update({
+        where: { id: application.applicantId },
+        data: { role: 'DELIVERY_PARTNER' },
+      });
+    }
+
+    return updated;
   });
 
   eventBus.emit(DELIVERY_PARTNER_APPLICATION_STATUS_CHANGED, {

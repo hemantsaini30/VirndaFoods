@@ -11,6 +11,7 @@ import RestaurantApplicationPage from './pages/customer/RestaurantApplicationPag
 import DeliveryPartnerApplicationPage from './pages/customer/DeliveryPartnerApplicationPage';
 import RestaurantsListPage from './pages/customer/RestaurantsListPage';
 import RestaurantDetailPage from './pages/customer/RestaurantDetailPage';
+import CartPage from './pages/customer/CartPage';
 import RestaurantDashboard from './pages/restaurant/RestaurantDashboard';
 import DriverDashboard from './pages/driver/DriverDashboard';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -25,9 +26,8 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
 
-            {/* Public restaurant browsing — new in Phase 4. Minimal by
-                design; full search/filter polish is Phase 5's job. No auth
-                required to view. */}
+            {/* Public restaurant browsing — Phase 4, extended with
+                search/sort in Phase 5. No auth required to view. */}
             <Route path="/restaurants" element={<RestaurantsListPage />} />
             <Route path="/restaurants/:id" element={<RestaurantDetailPage />} />
 
@@ -36,6 +36,17 @@ export default function App() {
               element={
                 <ProtectedRoute allowedRoles={['CUSTOMER']}>
                   <CustomerHome />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* New in Phase 5. Cart is per-customer, so CUSTOMER-only,
+                same pattern as every other role-scoped route here. */}
+            <Route
+              path="/cart"
+              element={
+                <ProtectedRoute allowedRoles={['CUSTOMER']}>
+                  <CartPage />
                 </ProtectedRoute>
               }
             />

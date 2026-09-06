@@ -1,7 +1,7 @@
 import axiosClient from '../axiosClient';
 
-function list({ city, page, limit } = {}) {
-  return axiosClient.get('/restaurants', { params: { city, page, limit } });
+function list({ city, q, sort, page, limit } = {}) {
+  return axiosClient.get('/restaurants', { params: { city, q, sort, page, limit } });
 }
 
 function listAdmin({ city, status, page, limit } = {}) {

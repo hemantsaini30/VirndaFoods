@@ -40,6 +40,21 @@ class ConflictError extends AppError {
   }
 }
 
+// New in Phase 5. A plain ConflictError's `code` is always the generic
+// 'CONFLICT' — fine for things like "you already have an active
+// application", but the cart's "you have items from a different
+// restaurant" case needs to be distinguishable from any other 409 so the
+// frontend can react to THIS specific situation (offer a "clear cart?"
+// confirmation) rather than showing a generic error toast for every kind
+// of conflict. Kept as its own small subclass rather than mutating a
+// ConflictError instance's `.code` after construction, which would be
+// easy to miss/forget at any given throw site.
+class CartRestaurantConflictError extends AppError {
+  constructor(message = 'Your cart contains items from a different restaurant.') {
+    super(message, 409, 'CART_RESTAURANT_CONFLICT');
+  }
+}
+
 module.exports = {
   AppError,
   ValidationError,
@@ -47,4 +62,5 @@ module.exports = {
   ForbiddenError,
   NotFoundError,
   ConflictError,
+  CartRestaurantConflictError,
 };

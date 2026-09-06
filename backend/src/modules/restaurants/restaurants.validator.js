@@ -15,14 +15,23 @@ const restaurantIdParamSchema = z.object({
 // ACTIVE-only — see restaurants.service.js). page/limit are coerced from
 // query-string strings to numbers, with sane bounds so nobody can request
 // an unbounded page size.
+//
+// Phase 5 additions: `q` (free-text search on name, trimmed, capped at a
+// reasonable length to avoid abuse) and `sort` (a closed enum — anything
+// else is caught here with a clear validation error, rather than silently
+// falling through to a default deep in the service layer where the client
+// gets no feedback at all).
 const listRestaurantsQuerySchema = z.object({
   city: z.string().trim().min(1).optional(),
+  q: z.string().trim().min(1).max(100).optional(),
+  sort: z.enum(['name', 'newest']).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
 // GET /restaurants/admin — ADMIN-only listing. Same pagination, but status
 // is a free filter here (including "show me everything" by omitting it).
+// Search/sort were not requested for this route in Phase 5.
 const listRestaurantsAdminQuerySchema = z.object({
   city: z.string().trim().min(1).optional(),
   status: z.enum(['ACTIVE', 'SUSPENDED', 'CLOSED']).optional(),

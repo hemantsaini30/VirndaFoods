@@ -2,21 +2,42 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import restaurantsApi from '../../api/endpoints/restaurantsApi';
 
-// Minimal public restaurant listing. Deliberately basic — no search box,
-// no cuisine/sort filters, just a city filter and pagination. Full
-// search/filtering polish is explicitly Phase 5's job, not this one.
+// Extended in Phase 5 with search (?q=) and sort — the city filter,
+// loading/empty/error states, and pagination controls are unchanged from
+// Phase 4.
 export default function RestaurantsListPage() {
   const [restaurants, setRestaurants] = useState([]);
   const [city, setCity] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [q, setQ] = useState(''); // debounced value actually sent to the API
+  const [sort, setSort] = useState('newest');
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState(null);
   const [status, setStatus] = useState('loading'); // 'loading' | 'success' | 'error'
+
+  // Debounce the search box: firing a request on every keystroke would
+  // spam the API while the user is still typing. 400ms is a common,
+  // unintrusive delay — long enough to skip most keystrokes, short enough
+  // that results still feel responsive once typing pauses.
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setQ(searchInput);
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(timeout);
+  }, [searchInput]);
 
   useEffect(() => {
     let cancelled = false;
     setStatus('loading');
     restaurantsApi
-      .list({ city: city || undefined, page, limit: 12 })
+      .list({
+        city: city || undefined,
+        q: q || undefined,
+        sort: sort === 'newest' ? undefined : sort, // 'newest' is the API's own default
+        page,
+        limit: 12,
+      })
       .then((res) => {
         if (cancelled) return;
         setRestaurants(res.data.restaurants);
@@ -29,13 +50,20 @@ export default function RestaurantsListPage() {
     return () => {
       cancelled = true;
     };
-  }, [city, page]);
+  }, [city, q, sort, page]);
 
   return (
     <div>
       <h1 className="mb-4 text-2xl font-semibold text-gray-900">Restaurants</h1>
 
-      <div className="mb-6 flex items-center gap-2">
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          placeholder="Search restaurants…"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          className="rounded border border-gray-300 px-3 py-2 text-sm"
+        />
         <input
           type="text"
           placeholder="Filter by city"
@@ -46,6 +74,17 @@ export default function RestaurantsListPage() {
           }}
           className="rounded border border-gray-300 px-3 py-2 text-sm"
         />
+        <select
+          value={sort}
+          onChange={(e) => {
+            setSort(e.target.value);
+            setPage(1);
+          }}
+          className="rounded border border-gray-300 px-3 py-2 text-sm"
+        >
+          <option value="newest">Newest</option>
+          <option value="name">Name (A–Z)</option>
+        </select>
       </div>
 
       {status === 'loading' && <p className="text-gray-500">Loading restaurants…</p>}

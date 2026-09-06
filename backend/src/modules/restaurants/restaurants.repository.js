@@ -29,13 +29,17 @@ function createFromApplication(tx, { applicationId, ownerId, name, address, city
   });
 }
 
-async function findMany({ where, skip, take }) {
+// `orderBy` is passed in fully-formed by the service layer (e.g.
+// { name: 'asc' } or { createdAt: 'desc' }) — this repository function
+// stays a thin Prisma-query wrapper and doesn't decide what "sort=name"
+// or the default sort means; that's a service-layer/API-contract concern.
+async function findMany({ where, skip, take, orderBy }) {
   const [restaurants, total] = await Promise.all([
     prisma.restaurant.findMany({
       where,
       skip,
       take,
-      orderBy: { createdAt: 'desc' },
+      orderBy: orderBy || { createdAt: 'desc' },
     }),
     prisma.restaurant.count({ where }),
   ]);

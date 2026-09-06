@@ -241,4 +241,70 @@ describe('Restaurants module — listing and self-edit (Phase 4)', () => {
       expect(res.status).toBe(400);
     });
   });
+
+  describe('GET /restaurants — search and sort (Phase 5)', () => {
+    it('filters by name substring via ?q=, case-insensitively', async () => {
+      const owner = await registerAndLogin({ role: 'RESTAURANT_OWNER' });
+      await createRestaurant({ ownerId: owner.user.id, name: 'Pizza Palace', city: 'Delhi' });
+      await createRestaurant({ ownerId: owner.user.id, name: 'Sushi Spot', city: 'Delhi' });
+
+      const res = await request(app).get('/api/v1/restaurants').query({ q: 'pizza' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.restaurants).toHaveLength(1);
+      expect(res.body.restaurants[0].name).toBe('Pizza Palace');
+    });
+
+    it('returns an empty list when the search matches nothing', async () => {
+      const owner = await registerAndLogin({ role: 'RESTAURANT_OWNER' });
+      await createRestaurant({ ownerId: owner.user.id, name: 'Pizza Palace', city: 'Delhi' });
+
+      const res = await request(app).get('/api/v1/restaurants').query({ q: 'nonexistent' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.restaurants).toHaveLength(0);
+    });
+
+    it('sorts by name ascending when sort=name', async () => {
+      const owner = await registerAndLogin({ role: 'RESTAURANT_OWNER' });
+      await createRestaurant({ ownerId: owner.user.id, name: 'Zebra Diner', city: 'Delhi' });
+      await createRestaurant({ ownerId: owner.user.id, name: 'Apple Cafe', city: 'Delhi' });
+
+      const res = await request(app).get('/api/v1/restaurants').query({ sort: 'name' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.restaurants.map((r) => r.name)).toEqual(['Apple Cafe', 'Zebra Diner']);
+    });
+
+    it('defaults to newest-first when sort is omitted', async () => {
+      const owner = await registerAndLogin({ role: 'RESTAURANT_OWNER' });
+      await createRestaurant({ ownerId: owner.user.id, name: 'First Place', city: 'Delhi' });
+      await createRestaurant({ ownerId: owner.user.id, name: 'Second Place', city: 'Delhi' });
+
+      const res = await request(app).get('/api/v1/restaurants');
+
+      expect(res.status).toBe(200);
+      expect(res.body.restaurants[0].name).toBe('Second Place');
+    });
+
+    it('rejects an invalid sort value with a validation error', async () => {
+      const res = await request(app).get('/api/v1/restaurants').query({ sort: 'rating' });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('combines q, city, and sort together', async () => {
+      const owner = await registerAndLogin({ role: 'RESTAURANT_OWNER' });
+      await createRestaurant({ ownerId: owner.user.id, name: 'Pizza Palace', city: 'Delhi' });
+      await createRestaurant({ ownerId: owner.user.id, name: 'Pizza Point', city: 'Mumbai' });
+
+      const res = await request(app)
+        .get('/api/v1/restaurants')
+        .query({ q: 'pizza', city: 'Delhi', sort: 'name' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.restaurants).toHaveLength(1);
+      expect(res.body.restaurants[0].name).toBe('Pizza Palace');
+    });
+  });
 });

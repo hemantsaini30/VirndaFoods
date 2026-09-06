@@ -172,7 +172,7 @@ describe('PATCH /api/v1/delivery-partner-applications/:id/status', () => {
     expect(res.body.application.reviewNote).toBe('Missing license.');
   });
 
-  it('walks the full PENDING -> UNDER_REVIEW -> APPROVED path (no linked live record, status-only)', async () => {
+  it('walks the full PENDING -> UNDER_REVIEW -> APPROVED path and flips the applicant role to DELIVERY_PARTNER', async () => {
     const { accessToken: customerToken, user: customer } = await registerAndLogin({
       role: 'CUSTOMER',
     });
@@ -193,6 +193,14 @@ describe('PATCH /api/v1/delivery-partner-applications/:id/status', () => {
       .send({ status: 'APPROVED' });
     expect(approvedRes.status).toBe(200);
     expect(approvedRes.body.application.status).toBe('APPROVED');
+
+    // This assertion is the fix: it was missing before, which is exactly
+    // why the mirror-image bug on the restaurant side went uncaught by
+    // tests too. Re-fetch from the DB rather than trusting any role field
+    // that might (or might not) be echoed back on the application
+    // response — we want to confirm the actual User row changed.
+    const updatedCustomer = await prisma.user.findUnique({ where: { id: customer.id } });
+    expect(updatedCustomer.role).toBe('DELIVERY_PARTNER');
 
     const notification = await waitForNotification(customer.id, 'APPLICATION_UPDATE');
     expect(notification).not.toBeNull();

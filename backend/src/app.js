@@ -21,6 +21,7 @@ const {
   itemRouter: menuItemRoutes,
 } = require('./modules/menu/menu.routes');
 const uploadsRoutes = require('./modules/uploads/uploads.routes');
+const cartRoutes = require('./modules/cart/cart.routes');
 
 const { registerListeners: registerNotificationListeners } = require('./modules/notifications');
 
@@ -78,6 +79,10 @@ app.use('/api/v1/categories', menuCategoryRoutes);
 app.use('/api/v1/items', menuItemRoutes);
 
 app.use('/api/v1/uploads', uploadsRoutes);
+
+// New in Phase 5. Single flat router (no nested-prefix complexity like
+// menu's three routers) — every cart route lives under /cart.
+app.use('/api/v1/cart', cartRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

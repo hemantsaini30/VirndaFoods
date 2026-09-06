@@ -29,17 +29,43 @@ function createFromApplication(tx, data) {
   return repository.createFromApplication(tx, data);
 }
 
+// Translates the public API's `sort` query param into a Prisma orderBy
+// object. Kept as its own small function so the two supported values are
+// explicit and easy to extend later (e.g. a future rating-based sort,
+// once Reviews exists) without scattering conditionals through list().
+// Anything not recognized falls back to the existing default (newest
+// first) rather than erroring — an unrecognized sort value degrading to a
+// sane default is friendlier than a 400 for what's a non-critical query
+// param.
+function resolveSortOrder(sort) {
+  if (sort === 'name') {
+    return { name: 'asc' };
+  }
+  return { createdAt: 'desc' }; // 'newest' and the default both land here
+}
+
 // Public listing. ACTIVE-only is enforced HERE, not left to the caller to
 // remember to pass — a customer (or an unauthenticated request) must never
 // be able to browse suspended/closed restaurants, regardless of what query
 // params arrive. City is an optional case-insensitive filter.
-async function list({ city, page, limit }) {
+//
+// Phase 5 adds `q` (case-insensitive substring match on name) and `sort`
+// ('name' | 'newest'). Both are additive on top of the existing
+// status: 'ACTIVE' filter — search/sort can narrow or reorder the ACTIVE
+// set, but can never be used to see past it. Full-text search tooling
+// (e.g. Postgres tsvector/GIN indexes) is explicitly out of scope per the
+// phase brief; a simple `contains` match is sufficient for this stage.
+async function list({ city, q, sort, page, limit }) {
   const where = { status: 'ACTIVE' };
   if (city) {
     where.city = { equals: city, mode: 'insensitive' };
   }
+  if (q) {
+    where.name = { contains: q, mode: 'insensitive' };
+  }
   const skip = (page - 1) * limit;
-  const { restaurants, total } = await repository.findMany({ where, skip, take: limit });
+  const orderBy = resolveSortOrder(sort);
+  const { restaurants, total } = await repository.findMany({ where, skip, take: limit, orderBy });
   return {
     restaurants,
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
@@ -50,7 +76,8 @@ async function list({ city, page, limit }) {
 // here (omit it to see every status). This is intentionally NOT the same
 // code path as the public `list()` above, so a future change to public
 // browsing (e.g. adding a cuisine filter) can never accidentally loosen
-// the ACTIVE-only guarantee for public callers.
+// the ACTIVE-only guarantee for public callers. Search/sort were not
+// requested for the admin listing in this phase, so it's left as-is.
 async function listAdmin({ city, status, page, limit }) {
   const where = {};
   if (city) {
