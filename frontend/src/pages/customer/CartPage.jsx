@@ -73,6 +73,15 @@ export default function CartPage() {
   }
 
   const isEmpty = cart.items.length === 0;
+  // Phase 6: checkout is blocked client-side if any item in the cart is
+  // currently unavailable — this is a UX convenience only (avoids sending
+  // the customer to checkout just to be bounced back). The backend
+  // (orders.service.js's createOrder) independently re-validates this
+  // exact same condition inside its own transaction regardless of what
+  // this check does, per the master prompt's "never trust the frontend"
+  // rule — this client-side gate is purely to save the customer a wasted
+  // round trip, not a substitute for that server-side check.
+  const hasUnavailableItem = cart.items.some((item) => !item.isAvailable);
 
   return (
     <div>
@@ -158,7 +167,13 @@ export default function CartPage() {
             </span>
           </div>
 
-          <div className="mt-4 flex justify-end">
+          {hasUnavailableItem && (
+            <p className="mt-3 text-sm text-red-600">
+              Remove unavailable items before proceeding to checkout.
+            </p>
+          )}
+
+          <div className="mt-4 flex items-center justify-between">
             <button
               type="button"
               onClick={() => setConfirmingClear(true)}
@@ -166,6 +181,21 @@ export default function CartPage() {
             >
               Clear cart
             </button>
+
+            <Link
+              to="/checkout"
+              aria-disabled={hasUnavailableItem}
+              onClick={(e) => {
+                if (hasUnavailableItem) e.preventDefault();
+              }}
+              className={`rounded px-4 py-2 text-sm font-medium text-white ${
+                hasUnavailableItem
+                  ? 'cursor-not-allowed bg-gray-300'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
+            >
+              Proceed to checkout
+            </Link>
           </div>
         </>
       )}

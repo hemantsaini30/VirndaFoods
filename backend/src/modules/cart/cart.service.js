@@ -7,6 +7,7 @@ const {
   ForbiddenError,
   ConflictError,
   CartRestaurantConflictError,
+  CartChangedDuringOrderError,
 } = require('../../utils/errors');
 
 // PRICE SNAPSHOT DECISION (stated explicitly, per the phase brief):
@@ -19,11 +20,9 @@ const {
 // a price that might be stale by the time the customer actually checks
 // out. The real, permanent price commitment happens at Order creation —
 // OrderItem.priceAtPurchaseInPaise already exists in the schema for
-// exactly that purpose, and a later Orders phase is responsible for
-// reading the cart's live prices ONE final time at checkout and writing
-// them down immutably. Duplicating any "snapshot" concept into Cart now
-// would just create a second, redundant, and potentially conflicting
-// source of truth for a price that isn't final yet anyway.
+// exactly that purpose. Phase 6 is that Order-creation phase; see
+// orders.service.js for where the live price is read ONE final time and
+// written down immutably.
 
 function serializeCartItem(cartItem, foodItem) {
   return {
@@ -168,10 +167,86 @@ async function clearCart(customerId) {
   return buildCartResponse(cart);
 }
 
+// ── Added Phase 6 — transaction-aware, order-creation-only ─────────────
+//
+// Everything above this point is completely unchanged from Phase 5 and
+// keeps using the shared `prisma` singleton via cart.repository.js's
+// non-tx functions, exactly as before. Nothing here alters the behavior
+// or signature of getCart/addItem/updateItemQuantity/removeItem/
+// clearCart, or of any existing exported function.
+//
+// The two functions below are NEW and are only ever intended to be called
+// from inside orders.service.js's single order-creation transaction. They
+// are kept as distinct, separately-named exports (not overloads or
+// modified signatures on the existing functions above) specifically so
+// that no future caller of getCart/clearCart/etc. is silently affected by
+// this change — per the explicit instruction to keep transaction-aware
+// variants clearly separate.
+
+// Returns the customer's cart with items + FoodItem data, read inside the
+// given transaction `tx`. Used by orders.service.js as its first read of
+// "what is this customer trying to order" — reading through tx (not the
+// shared prisma singleton) means this read is part of the same isolated
+// transaction that will go on to validate, create the Order, and then
+// attempt to clear the cart, so nothing else can be interleaved between
+// this read and the rest of the transaction's logic from the perspective
+// of what THIS transaction sees.
+//
+// Returns { cart, items } where items are raw CartItem rows each carrying
+// a nested `foodItem`. Deliberately NOT reusing buildCartResponse's
+// serialized shape (priceInRupees, lineTotalInPaise, etc.) — the caller
+// (orders.service.js) needs to re-derive its own totals independently
+// from priceInPaise as part of its own explicit server-side recalculation
+// step, not consume a shape that was designed for a UI cart display.
+async function getCartForOrder(tx, customerId) {
+  const cart = await repository.findCartWithItemsForUpdate(tx, customerId);
+  if (!cart) {
+    // A customer with literally no Cart row yet (never called any cart
+    // endpoint at all) has nothing to order. Treated identically to an
+    // empty cart by the caller — surfaced as the same "cart is empty"
+    // ConflictError there, not duplicated here.
+    return { cart: null, items: [] };
+  }
+  return { cart, items: cart.items };
+}
+
+// Attempts to clear the customer's cart as the final step of order
+// creation, inside the same transaction `tx` that already created the
+// Order/OrderItem/OrderEvent rows. `expectedItemCount` is the item count
+// the caller observed via getCartForOrder() moments earlier, in the same
+// transaction.
+//
+// WHY THIS CAN FAIL (concurrency): if a second request from the same
+// customer (e.g. a double-submit with a different Idempotency-Key,
+// racing this one) manages to modify the cart — add an item, remove one,
+// or itself clear the cart via its own concurrent order-creation attempt
+// — between this transaction's initial read and this delete step, the
+// actual current item count will no longer match expectedItemCount. This
+// function detects that (via cart.repository.js's
+// deleteItemsWithCountCheck, which uses the same "compare via
+// affected-row-count" idiom as menu.repository.js's optimistic-locking
+// update) and returns deleted:false rather than deleting anything. The
+// caller (orders.service.js) treats that as a hard failure and throws
+// CartChangedDuringOrderError, which rolls back the ENTIRE transaction —
+// so no Order is left half-created against a cart that has since changed
+// out from under it. The customer sees a clear "your cart changed,
+// please try again" message and their actual current cart is left
+// completely untouched by the failed attempt.
+async function clearCartItemsForOrder(tx, cartId, expectedItemCount) {
+  const result = await repository.deleteItemsWithCountCheck(tx, cartId, expectedItemCount);
+  if (!result.deleted) {
+    throw new CartChangedDuringOrderError();
+  }
+  await repository.setCartRestaurantTx(tx, cartId, null);
+  return result;
+}
+
 module.exports = {
   getCart,
   addItem,
   updateItemQuantity,
   removeItem,
   clearCart,
+  getCartForOrder,
+  clearCartItemsForOrder,
 };

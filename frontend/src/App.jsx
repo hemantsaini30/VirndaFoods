@@ -12,6 +12,9 @@ import DeliveryPartnerApplicationPage from './pages/customer/DeliveryPartnerAppl
 import RestaurantsListPage from './pages/customer/RestaurantsListPage';
 import RestaurantDetailPage from './pages/customer/RestaurantDetailPage';
 import CartPage from './pages/customer/CartPage';
+import CheckoutPage from './pages/customer/CheckoutPage';
+import OrderHistoryPage from './pages/customer/OrderHistoryPage';
+import OrderDetailPage from './pages/customer/OrderDetailPage';
 import RestaurantDashboard from './pages/restaurant/RestaurantDashboard';
 import DriverDashboard from './pages/driver/DriverDashboard';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -40,13 +43,47 @@ export default function App() {
               }
             />
 
-            {/* New in Phase 5. Cart is per-customer, so CUSTOMER-only,
-                same pattern as every other role-scoped route here. */}
+            {/* Phase 5. Cart is per-customer, so CUSTOMER-only, same
+                pattern as every other role-scoped route here. */}
             <Route
               path="/cart"
               element={
                 <ProtectedRoute allowedRoles={['CUSTOMER']}>
                   <CartPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* New in Phase 6. Checkout, order confirmation/detail, and
+                order history — all CUSTOMER-only, same reasoning as
+                /cart above: these are all steps in a single customer
+                purchase flow, so they're grouped together here. /orders/:id
+                serves as BOTH the post-checkout confirmation screen
+                (CheckoutPage redirects here on success) and the general
+                order-detail view reached from /orders — see
+                OrderDetailPage.jsx's own comment for why there's no
+                separate confirmation route. */}
+            <Route
+              path="/checkout"
+              element={
+                <ProtectedRoute allowedRoles={['CUSTOMER']}>
+                  <CheckoutPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/orders"
+              element={
+                <ProtectedRoute allowedRoles={['CUSTOMER']}>
+                  <OrderHistoryPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/orders/:id"
+              element={
+                <ProtectedRoute allowedRoles={['CUSTOMER']}>
+                  <OrderDetailPage />
                 </ProtectedRoute>
               }
             />

@@ -33,15 +33,27 @@ function createFromApplication(tx, data) {
 // object. Kept as its own small function so the two supported values are
 // explicit and easy to extend later (e.g. a future rating-based sort,
 // once Reviews exists) without scattering conditionals through list().
-// Anything not recognized falls back to the existing default (newest
-// first) rather than erroring — an unrecognized sort value degrading to a
-// sane default is friendlier than a 400 for what's a non-critical query
-// param.
+//
+// CORRECTED Phase 6 (this comment was wrong — flagged in the Phase 5
+// handoff and now fixed): this function does NOT gracefully fall back for
+// unrecognized sort values at runtime. listRestaurantsQuerySchema (Zod)
+// already restricts `sort` to the literal enum ['name', 'newest'] before
+// this function is ever called — an invalid value like 'rating' is
+// rejected with a 400 VALIDATION_ERROR at the middleware layer and never
+// reaches here at all. By the time resolveSortOrder() runs, `sort` is
+// therefore always exactly 'name', exactly 'newest', or undefined
+// (omitted entirely — an optional query param). The `return { createdAt:
+// 'desc' }` branch below exists to handle BOTH of the latter two cases
+// (explicit 'newest' and omitted/undefined), not as a defensive fallback
+// for an already-invalid value that can't actually arrive here. Confirmed
+// by the existing test 'rejects an invalid sort value with a validation
+// error' in restaurants.test.js, which asserts the 400 happens before
+// this function's behavior would even matter.
 function resolveSortOrder(sort) {
   if (sort === 'name') {
     return { name: 'asc' };
   }
-  return { createdAt: 'desc' }; // 'newest' and the default both land here
+  return { createdAt: 'desc' }; // 'newest' and omitted/undefined both land here
 }
 
 // Public listing. ACTIVE-only is enforced HERE, not left to the caller to
